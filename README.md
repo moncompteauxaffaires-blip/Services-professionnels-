@@ -1,17 +1,44 @@
 # Services-professionnels-
-Aide à la personne avec des services professionnels 
+Aide à la personne avec des services professionnels.
 
 https://services-professionn-azgl.bolt.host
 
-## Démarrage local
+## Préparation locale
 
-Cette source est un nouveau socle Vite/React pour le projet. Elle ne prétend pas être une copie exacte du site Bolt, dont le code source n’était pas présent dans ce dépôt. Aucun fichier existant n’a été supprimé.
+1. Copier le fichier d’exemple des variables d’environnement :
+   `cp .env.example .env.local`
+2. Renseigner les valeurs du projet Supabase dans `.env.local` :
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+3. Installer les dépendances :
+   `npm install`
+4. Lancer le projet :
+   `npm run dev`
 
-1. Installez Node.js 20 ou plus récent.
-2. Copiez `.env.example` vers `.env.local` et renseignez l’URL Supabase ainsi que la clé publique `anon` du projet.
-3. Dans Supabase, exécutez `supabase/migrations/202611060001_initial_schema.sql` via l’éditeur SQL.
-4. Lancez `npm install`, puis `npm run dev`.
+## Variables d’environnement
 
-Les nouvelles inscriptions sont créées avec le rôle `professional`. Le rôle `company` ou `admin` doit être attribué par une procédure de confiance dans Supabase (par exemple, une opération administrative authentifiée hors navigateur). L’application ne propose aucun moyen de s’auto-attribuer ces rôles. La clé `service_role` ne doit jamais être ajoutée à l’application cliente.
+Les variables ne doivent jamais être ajoutées dans le code source ni dans Git. Le dépôt ne contient que le modèle `.env.example` sans vraie valeur.
 
-Les politiques RLS constituent la frontière d’autorisation des données. Vérifiez-les dans un projet Supabase de test avant toute mise en production et configurez les URL de redirection Auth pour votre domaine.
+```dotenv
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<public-anon-key>
+```
+
+## Sécurité et rôles
+
+L’application expose uniquement la clé publique `anon` de Supabase. Les autorisations réelles sont vérifiées côté serveur via les politiques RLS dans Supabase.
+
+Rôles supportés :
+- `admin`
+- `company`
+- `professional`
+
+Le rôle `admin` et le rôle `company` doivent être attribués par un canal de confiance côté serveur (SQL Supabase ou backend sécurisé). L’application frontend ne doit pas permettre à un utilisateur de s’auto-attribuer un rôle élevé.
+
+## Migration Supabase
+
+Exécuter la migration suivante dans l’éditeur SQL de Supabase avant de tester l’application :
+
+`supabase/migrations/202611060001_initial_schema.sql`
+
+Cette migration crée les tables utilisateur et service ainsi que les politiques RLS. Les droits d’accès ne dépendent pas d’un paramètre modifiable dans le navigateur.
