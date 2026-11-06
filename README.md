@@ -1,44 +1,138 @@
-# Services-professionnels-
-Aide à la personne avec des services professionnels.
+-- Create in the Supabase SQL editor. All client access is governed by RLS.
+create table if not exists public.user_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  display_name text,
+  role text not null default 'professional' check (role in ('admin', 'company', 'professional')),
+  created_at timestamptz not null default now()
+);
 
-https://services-professionn-azgl.bolt.host
+create table if not exists public.service_listings (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.user_profiles(id) on delete cascade,
+  title text not null,
+  description text not null default '',
+  category text not null,
+  city text not null default '',
+  price numeric(10,2) check (price is null or price >= 0),
+  status text not null default 'draft' check (status in ('draft', 'published', 'archived')),
+  created_at timestamptz not null default now()
+);
 
-## Préparation locale
+create table if not exists public.service_requests (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.user_profiles(id) on delete cascade,
+  professional_id uuid not null references public.user_profiles(id) on delete cascade,
+  listing_id uuid references public.service_listings(id) on delete set null,
+  message text not null default '',
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'declined', 'completed')),
+  created_at timestamptz not null default now()
+);
 
-1. Copier le fichier d’exemple des variables d’environnement :
-   `cp .env.example .env.local`
-2. Renseigner les valeurs du projet Supabase dans `.env.local` :
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-3. Installer les dépendances :
-   `npm install`
-4. Lancer le projet :
-   `npm run dev`
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.user_profiles (id, display_name, role)
+  values (new.id, nullif(new.raw_user_meta_data ->> 'display_name', ''), 'professional');
+  return new;
+end;
+$$;
 
-## Variables d’environnement
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute procedure public.handle_new_user();
 
-Les variables ne doivent jamais être ajoutées dans le code source ni dans Git. Le dépôt ne contient que le modèle `.env.example` sans vraie valeur.
+create or replace function public.current_app_role()
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p.role from public.user_profiles p where p.id = (select auth.uid())
+$$;
 
-```dotenv
-VITE_SUPABASE_URL=https://<project-ref>.supabase.co
-VITE_SUPABASE_ANON_KEY=<public-anon-key>
-```
+grant execute on function public.current_app_role() to authenticated;
 
-## Sécurité et rôles
+alter table public.user_profiles enable row level security;
+alter table public.service_listings enable row level security;
+alter table public.service_requests enable row level security;
 
-L’application expose uniquement la clé publique `anon` de Supabase. Les autorisations réelles sont vérifiées côté serveur via les politiques RLS dans Supabase.
+revoke all on public.user_profiles from anon, authenticated;
+grant select on public.user_profiles to authenticated;
+grant update (display_name) on public.user_profiles to authenticated;
 
-Rôles supportés :
-- `admin`
-- `company`
-- `professional`
+create policy "Users read own profile or admin reads profiles"
+on public.user_profiles for select to authenticated
+using (id = (select auth.uid()) or (select public.current_app_role()) = 'admin');
 
-Le rôle `admin` et le rôle `company` doivent être attribués par un canal de confiance côté serveur (SQL Supabase ou backend sécurisé). L’application frontend ne doit pas permettre à un utilisateur de s’auto-attribuer un rôle élevé.
+create policy "Users update own display name"
+on public.user_profiles for update to authenticated
+using (id = (select auth.uid()) and role <> 'admin')
+with check (id = (select auth.uid()) and role <> 'admin');
 
-## Migration Supabase
+revoke all on public.service_listings from anon, authenticated;
+grant select on public.service_listings to anon, authenticated;
+grant insert, update, delete on public.service_listings to authenticated;
 
-Exécuter la migration suivante dans l’éditeur SQL de Supabase avant de tester l’application :
+create policy "Published listings are public; owners and admins can read all"
+on public.service_listings for select to anon, authenticated
+using (
+  status = 'published'
+  or owner_id = (select auth.uid())
+  or (select public.current_app_role()) = 'admin'
+);
 
-`supabase/migrations/202611060001_initial_schema.sql`
+create policy "Professionals create their own listings"
+on public.service_listings for insert to authenticated
+with check (
+  owner_id = (select auth.uid())
+  and (select public.current_app_role()) = 'professional'
+);
 
-Cette migration crée les tables utilisateur et service ainsi que les politiques RLS. Les droits d’accès ne dépendent pas d’un paramètre modifiable dans le navigateur.
+create policy "Professionals update their own listings"
+on public.service_listings for update to authenticated
+using (owner_id = (select auth.uid()) and (select public.current_app_role()) = 'professional')
+with check (owner_id = (select auth.uid()) and (select public.current_app_role()) = 'professional');
+
+create policy "Professionals delete their own listings"
+on public.service_listings for delete to authenticated
+using (owner_id = (select auth.uid()) and (select public.current_app_role()) = 'professional');
+
+revoke all on public.service_requests from anon, authenticated;
+grant select, insert, update on public.service_requests to authenticated;
+
+create policy "Participants and admins read requests"
+on public.service_requests for select to authenticated
+using (
+  company_id = (select auth.uid())
+  or professional_id = (select auth.uid())
+  or (select public.current_app_role()) = 'admin'
+);
+
+create policy "Companies create requests for professionals"
+on public.service_requests for insert to authenticated
+with check (
+  company_id = (select auth.uid())
+  and (select public.current_app_role()) = 'company'
+  and exists (
+    select 1 from public.user_profiles p
+    where p.id = professional_id and p.role = 'professional'
+  )
+);
+
+create policy "Request participants update requests"
+on public.service_requests for update to authenticated
+using (
+  company_id = (select auth.uid()) or professional_id = (select auth.uid())
+)
+with check (
+  company_id = (select auth.uid()) or professional_id = (select auth.uid())
+);
+
+-- Roles are intentionally not self-service. Provision company/admin only from a trusted backend or SQL admin context.
+-- Never expose a service_role key in a Vite environment.
