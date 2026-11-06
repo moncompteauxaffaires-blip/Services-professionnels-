@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { ArrowRight, HeartHandshake, LogOut, Search, ShieldCheck } from 'lucide-react';
+import { ArrowRight, HeartHandshake, Search, ShieldCheck } from 'lucide-react';
 import { getCurrentProfile, type AppProfile } from './lib/auth';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { AdminDashboard } from './pages/AdminDashboard';
@@ -25,6 +25,7 @@ export default function App() {
     if (!supabase) { setLoading(false); return; }
     let active = true;
     const refresh = async (next: Session | null) => {
+      if (!active) return;
       setSession(next);
       if (!next) { setProfile(null); setLoading(false); return; }
       setLoading(true);
@@ -49,7 +50,7 @@ export default function App() {
         : await supabase.auth.signInWithPassword({ email, password });
       if (result.error) { setError(result.error.message); return; }
       if (signup && !result.data.session) {
-        setNotice('Consultez votre courriel pour confirmer votre compte. Le rôle initial est Professionnel.');
+        setNotice('Consultez votre courriel pour confirmer le compte. Le rôle initial est Professionnel.');
       } else {
         setAuthOpen(false); setPassword('');
       }
@@ -67,13 +68,11 @@ export default function App() {
 
   if (loading) return <main className="app-shell"><p role="status" className="loading-note">Vérification de la session…</p></main>;
 
-  if (session && !profile) {
-    return <main className="app-shell"><header className="topbar"><a className="brand" href="#accueil"><span className="brand-mark"><HeartHandshake /></span>Services professionnels</a><button className="button button-quiet" onClick={signOut}><LogOut size={16}/> Déconnexion</button></header><section className="services-section"><h1>Profil indisponible</h1><p>Votre session est valide, mais aucun rôle autorisé n’a pu être confirmé dans Supabase. L’accès est refusé.</p>{error && <p role="alert">{error}</p>}</section></main>;
-  }
-
-  if (session && profile) {
+  if (session) {
+    if (!profile) return <main className="app-shell"><header className="topbar"><a className="brand" href="#accueil"><span className="brand-mark"><HeartHandshake /></span>Services professionnels</a><button className="button button-quiet" onClick={signOut}>Déconnexion</button></header><section className="services-section"><h1>Profil indisponible</h1><p>Votre session est valide, mais aucun rôle autorisé n’a pu être confirmé dans Supabase. L’accès est refusé.</p><button className="button button-dark" onClick={signOut}>Se déconnecter</button></section></main>;
     const dashboard = profile.role === 'admin' ? <AdminDashboard /> : profile.role === 'company' ? <CompanyDashboard /> : <ProfessionalDashboard />;
-    return <div className="app-shell"><header className="topbar"><a className="brand" href="#accueil"><span className="brand-mark"><HeartHandshake /></span>Services professionnels</a><span className="signed-in">Espace {profile.role === 'admin' ? 'Administrateur' : profile.role === 'company' ? 'Entreprise' : 'Professionnel'}</span><button className="button button-quiet" onClick={signOut}><LogOut size={16}/> Déconnexion</button></header>{dashboard}</div>;
+    const roleLabel = profile.role === 'admin' ? 'Administrateur' : profile.role === 'company' ? 'Entreprise' : 'Professionnel';
+    return <div className="app-shell"><header className="topbar"><a className="brand" href="#accueil"><span className="brand-mark"><HeartHandshake /></span>Services professionnels</a><span className="signed-in">Espace {roleLabel}</span><button className="button button-quiet" onClick={signOut}>Déconnexion</button></header>{dashboard}</div>;
   }
 
   const offerings = [
