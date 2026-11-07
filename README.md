@@ -2,6 +2,8 @@
 
 Site de services d’aide à la personne avec espaces Professionnel, Entreprise et Administrateur.
 
+**Site en ligne :** https://services-professionn-azgl.bolt.host
+
 ## Démarrage local
 
 1. Copier `.env.example` vers `.env.local` (PowerShell : `Copy-Item .env.example .env.local`).
